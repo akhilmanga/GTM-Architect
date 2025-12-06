@@ -84,6 +84,22 @@ export interface ContentDraft {
   content: string;
 }
 
+export interface RoastResult {
+  score: number; // 0-100
+  brutalTruth: string; // The one-line summary
+  fixes: {
+    area: string; // e.g., "Headline", "CTA"
+    problem: string;
+    solution: string;
+  }[];
+}
+
+export interface WarRoomResult {
+  signal: string;
+  action: string;
+  sources: { title: string; url: string }[];
+}
+
 export enum AppState {
   LANDING,
   INTAKE,

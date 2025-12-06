@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { GTMPlan, Domain, FormData } from '../types';
-import { Download, RefreshCw, ArrowLeft, Target, Users, Zap, MessageSquare, PlayCircle, Swords, AlertTriangle, ShieldCheck, PenTool } from 'lucide-react';
+import { GTMPlan, Domain, FormData, WarRoomResult } from '../types';
+import { Download, RefreshCw, ArrowLeft, Target, Users, Zap, MessageSquare, PlayCircle, Swords, AlertTriangle, ShieldCheck, PenTool, Flame, Radio, ExternalLink, Loader } from 'lucide-react';
 import { downloadMarkdown } from '../utils/exportUtils';
-import { regenerateQuarter } from '../services/geminiService';
+import { regenerateQuarter, getCompetitorIntel } from '../services/geminiService';
 import PersonaSimulator from './PersonaSimulator';
 import ContentDrafter from './ContentDrafter';
+import LandingPageRoaster from './LandingPageRoaster';
 
 interface DashboardProps {
   initialPlan: GTMPlan;
@@ -16,7 +17,12 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
   const [plan, setPlan] = useState<GTMPlan>(initialPlan);
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
   const [showPersonaChat, setShowPersonaChat] = useState(false);
+  const [showRoaster, setShowRoaster] = useState(false);
   const [draftingConfig, setDraftingConfig] = useState<{action: string, platform: string} | null>(null);
+  
+  // War Room State
+  const [intelLoading, setIntelLoading] = useState<Record<string, boolean>>({});
+  const [intelResults, setIntelResults] = useState<Record<string, WarRoomResult>>({});
 
   const isWeb3 = plan.domain === 'Web3' || plan.domain.includes('Web3');
   const accentText = isWeb3 ? 'text-emerald-400' : 'text-indigo-400';
@@ -40,6 +46,20 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
     }
   };
 
+  const handleFetchIntel = async (competitorName: string) => {
+    if (intelLoading[competitorName] || intelResults[competitorName]) return;
+
+    setIntelLoading(prev => ({ ...prev, [competitorName]: true }));
+    try {
+        const result = await getCompetitorIntel(competitorName, domainData);
+        setIntelResults(prev => ({ ...prev, [competitorName]: result }));
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setIntelLoading(prev => ({ ...prev, [competitorName]: false }));
+    }
+  };
+
   const handleTextEdit = (section: keyof GTMPlan, value: string) => {
     // @ts-ignore
     setPlan({ ...plan, [section]: value });
@@ -52,6 +72,13 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
             plan={plan} 
             data={domainData} 
             onClose={() => setShowPersonaChat(false)} 
+        />
+      )}
+
+      {showRoaster && (
+        <LandingPageRoaster
+            plan={plan}
+            onClose={() => setShowRoaster(false)}
         />
       )}
 
@@ -85,7 +112,7 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
         
         {/* Executive Snapshot */}
         <section className={`p-6 rounded-2xl border ${accentBorder} ${accentBg} print-break-inside`}>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                     <Target className={`w-4 h-4 ${accentText}`} />
                     <span className={`text-xs font-bold uppercase tracking-wider ${accentText} opacity-80`}>
@@ -96,15 +123,7 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
             
             <div className="grid md:grid-cols-2 gap-8">
                 <div>
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xs text-slate-400 uppercase tracking-wide">Minimum Viable Customer Category (MVCC)</h3>
-                        <button 
-                            onClick={() => setShowPersonaChat(true)}
-                            className={`flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-1 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 transition-colors ${accentText}`}
-                        >
-                            <PlayCircle className="w-3 h-3" /> Simulate Interview
-                        </button>
-                    </div>
+                    <h3 className="text-xs text-slate-400 uppercase tracking-wide mb-2">Minimum Viable Customer Category (MVCC)</h3>
                     <div 
                         contentEditable 
                         suppressContentEditableWarning
@@ -128,20 +147,96 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
             </div>
         </section>
 
-        {/* Competitor Battle Cards */}
+        {/* GTM Toolkit Section */}
+        <section className="grid md:grid-cols-2 gap-4 print:hidden">
+            <button 
+                onClick={() => setShowRoaster(true)}
+                className="group p-5 bg-slate-900 border border-slate-800 hover:border-orange-500/50 rounded-xl text-left transition-all hover:bg-slate-900/80 flex flex-col gap-2 relative overflow-hidden"
+            >
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
+                    <Flame className="w-24 h-24 text-orange-500" />
+                </div>
+                <div className="flex items-center gap-2 text-orange-500 font-bold uppercase text-xs tracking-wider z-10">
+                    <Flame className="w-4 h-4" /> Vision Analysis
+                </div>
+                <h3 className="text-xl font-bold text-slate-100 z-10">Landing Page Roaster</h3>
+                <p className="text-sm text-slate-400 z-10 max-w-[90%]">
+                    Upload your site screenshot. AI critiques UX, copy, and trust signals specifically for {plan.mvcc}.
+                </p>
+            </button>
+
+            <button 
+                onClick={() => setShowPersonaChat(true)}
+                className={`group p-5 bg-slate-900 border border-slate-800 hover:border-${isWeb3 ? 'emerald' : 'indigo'}-500/50 rounded-xl text-left transition-all hover:bg-slate-900/80 flex flex-col gap-2 relative overflow-hidden`}
+            >
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
+                    <PlayCircle className={`w-24 h-24 ${accentText}`} />
+                </div>
+                <div className={`flex items-center gap-2 font-bold uppercase text-xs tracking-wider ${accentText} z-10`}>
+                    <MessageSquare className="w-4 h-4" /> Roleplay Simulation
+                </div>
+                <h3 className="text-xl font-bold text-slate-100 z-10">Pitch The Persona</h3>
+                <p className="text-sm text-slate-400 z-10 max-w-[90%]">
+                    Test your pitch live against a skeptical AI simulating your target user. Get a resonance score.
+                </p>
+            </button>
+        </section>
+
+        {/* Competitor Battle Cards (War Room Enhanced) */}
         {plan.competitorAnalysis && plan.competitorAnalysis.length > 0 && (
           <section className="space-y-6 print-break-inside">
-             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                <span className="text-red-500">///</span> Competitor Battle Cards
-            </h2>
+             <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                    <span className="text-red-500">///</span> Competitor War Room
+                </h2>
+                <div className="flex items-center gap-2">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
+                    <span className="text-xs text-slate-400 uppercase tracking-wider font-medium">
+                        Live Search Active
+                    </span>
+                </div>
+             </div>
+             
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {plan.competitorAnalysis.map((comp, idx) => (
-                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden group hover:border-slate-700 transition-colors">
-                  <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center gap-2">
-                    <Swords className="w-4 h-4 text-red-400" />
-                    <span className="font-bold text-slate-200">{comp.competitorName}</span>
+                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden group hover:border-slate-700 transition-colors flex flex-col h-full">
+                  <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Swords className="w-4 h-4 text-red-400" />
+                        <span className="font-bold text-slate-200">{comp.competitorName}</span>
+                    </div>
+                    
+                    {/* Live Intel Button */}
+                    <button 
+                        onClick={() => handleFetchIntel(comp.competitorName)}
+                        disabled={intelLoading[comp.competitorName] || !!intelResults[comp.competitorName]}
+                        className={`text-[10px] uppercase font-bold px-2 py-1 rounded flex items-center gap-1 transition-all ${
+                            intelResults[comp.competitorName] 
+                            ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                            : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700'
+                        }`}
+                    >
+                        {intelLoading[comp.competitorName] ? (
+                            <>
+                                <Loader className="w-3 h-3 animate-spin" /> Scanning...
+                            </>
+                        ) : intelResults[comp.competitorName] ? (
+                            <>
+                                <Radio className="w-3 h-3 animate-pulse" /> Live
+                            </>
+                        ) : (
+                            <>
+                                <Zap className="w-3 h-3" /> Get Live Intel
+                            </>
+                        )}
+                    </button>
                   </div>
-                  <div className="p-4 space-y-4">
+                  
+                  <div className="p-4 space-y-4 flex-1">
+                    {/* Static Analysis */}
                     <div>
                       <div className="flex items-center gap-2 text-xs font-bold text-red-400 uppercase mb-1">
                         <AlertTriangle className="w-3 h-3" /> Their Weakness
@@ -155,6 +250,47 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
                       <p className="text-sm text-slate-300 font-medium leading-relaxed">{comp.ourWedge}</p>
                     </div>
                   </div>
+
+                  {/* Dynamic War Room Intel */}
+                  {intelResults[comp.competitorName] && (
+                    <div className="bg-red-500/5 border-t border-red-500/20 p-4 animate-in slide-in-from-bottom duration-500">
+                        <div className="mb-3">
+                            <h4 className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                <Radio className="w-3 h-3 animate-pulse" /> Latest Signal
+                            </h4>
+                            <p className="text-xs text-slate-300 leading-relaxed font-mono">
+                                "{intelResults[comp.competitorName].signal}"
+                            </p>
+                        </div>
+                        
+                        <div className="mb-3">
+                            <h4 className="text-[10px] font-bold text-white uppercase tracking-widest mb-2">
+                                Counter-Move
+                            </h4>
+                            <p className="text-xs text-white leading-relaxed font-bold">
+                                {intelResults[comp.competitorName].action}
+                            </p>
+                        </div>
+
+                        {/* Citations */}
+                        {intelResults[comp.competitorName].sources.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-red-500/10">
+                                {intelResults[comp.competitorName].sources.map((source, sIdx) => (
+                                    <a 
+                                        key={sIdx} 
+                                        href={source.url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-1 text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-500 hover:text-white px-2 py-1 rounded-full border border-slate-800 transition-colors"
+                                    >
+                                        <ExternalLink className="w-2.5 h-2.5" />
+                                        <span className="truncate max-w-[100px]">{source.title}</span>
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

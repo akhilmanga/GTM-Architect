@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { Domain, FormData, GTMPlan, QuarterPlan, Web3Inputs, Web2Inputs, ContentDraft } from "../types";
+import { Domain, FormData, GTMPlan, QuarterPlan, Web3Inputs, Web2Inputs, ContentDraft, RoastResult, WarRoomResult } from "../types";
 
 const SYSTEM_INSTRUCTION = `
 You are a Tier-1 Go-To-Market Strategist (a16z meets Notion).
@@ -324,4 +324,139 @@ export const startPersonaChat = async (plan: GTMPlan, data: FormData) => {
     });
 
     return { chat, initialMessage: initResponse.text };
+}
+
+export const roastLandingPage = async (base64Image: string, plan: GTMPlan): Promise<RoastResult> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const prompt = `
+    You are a conversion optimization expert and a brutal design critic.
+    The user is showing you a landing page for a project targeting: "${plan.mvcc}".
+    
+    The Pitch/Goal: ${plan.primaryMotion}
+    
+    Task:
+    1. Look at the image.
+    2. ROAST IT from the perspective of the "${plan.mvcc}".
+    3. Analyze the visual hierarchy, color psychology, and trust signals.
+    4. Identify 3 specific fixes (Headline, CTA, Visuals, or Copy).
+    
+    Be harsh but helpful.
+    `;
+
+    const ROAST_SCHEMA: Schema = {
+        type: Type.OBJECT,
+        properties: {
+            score: { type: Type.NUMBER, description: "Conversion score 0-100" },
+            brutalTruth: { type: Type.STRING, description: "One sentence summary of why it sucks or works." },
+            fixes: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        area: { type: Type.STRING },
+                        problem: { type: Type.STRING },
+                        solution: { type: Type.STRING },
+                    },
+                    required: ["area", "problem", "solution"]
+                }
+            }
+        },
+        required: ["score", "brutalTruth", "fixes"]
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: 'image/png', data: base64Image } },
+                    { text: prompt }
+                ]
+            },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: ROAST_SCHEMA,
+            }
+        });
+
+        if (response.text) {
+            return JSON.parse(response.text) as RoastResult;
+        }
+        throw new Error("Failed to generate roast");
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
+}
+
+export const getCompetitorIntel = async (competitor: string, projectContext: FormData): Promise<WarRoomResult> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  // Note: responseSchema is NOT supported with Google Search tool. 
+  // We must ask for structured text and parse it.
+  
+  const prompt = `
+  PERFORM A LIVE SEARCH (Last 30 days) for: "${competitor}".
+  Find their latest news, feature releases, pricing changes, or user controversies.
+  
+  CONTEXT: I am building "${projectContext.projectName}" (${projectContext.description}).
+  
+  TASK:
+  1. Summarize the most critical recent update/signal for ${competitor}.
+  2. Recommend a specific "Counter-Move" or "Wedge" for my project to capitalize on this.
+  
+  STRICT OUTPUT FORMAT (Use these exact headers):
+  SIGNAL: [One clear sentence describing the latest intel]
+  ACTION: [One specific, tactical counter-move]
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const text = response.text || "";
+    
+    // Parse the text output manually
+    const signalMatch = text.match(/SIGNAL:\s*(.+?)(?=ACTION:|$)/is);
+    const actionMatch = text.match(/ACTION:\s*(.+?)(?=$)/is);
+    
+    const signal = signalMatch ? signalMatch[1].trim() : "No clear signal found.";
+    const action = actionMatch ? actionMatch[1].trim() : "Monitor closely.";
+
+    // Extract citations from grounding metadata
+    const sources: { title: string; url: string }[] = [];
+    
+    // Check for grounding chunks in the candidate
+    const candidate = response.candidates?.[0];
+    if (candidate?.groundingMetadata?.groundingChunks) {
+        candidate.groundingMetadata.groundingChunks.forEach((chunk: any) => {
+            if (chunk.web) {
+                sources.push({
+                    title: chunk.web.title || "Source",
+                    url: chunk.web.uri
+                });
+            }
+        });
+    }
+
+    return {
+        signal,
+        action,
+        sources: sources.slice(0, 3) // Top 3 sources
+    };
+
+  } catch (e) {
+    console.error("War Room Error:", e);
+    return {
+        signal: "Could not fetch live intel.",
+        action: "Check manual sources.",
+        sources: []
+    };
+  }
 }
