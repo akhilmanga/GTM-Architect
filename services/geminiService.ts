@@ -326,23 +326,31 @@ export const startPersonaChat = async (plan: GTMPlan, data: FormData) => {
     return { chat, initialMessage: initResponse.text };
 }
 
-export const roastLandingPage = async (base64Image: string, plan: GTMPlan): Promise<RoastResult> => {
+export const roastLandingPage = async (images: string[], url: string, plan: GTMPlan): Promise<RoastResult> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const prompt = `
     You are a conversion optimization expert and a brutal design critic.
-    The user is showing you a landing page for a project targeting: "${plan.mvcc}".
+    The user is showing you screenshots of a landing page for a project targeting: "${plan.mvcc}".
     
+    Project URL (for context): ${url || "Not provided"}
     The Pitch/Goal: ${plan.primaryMotion}
     
     Task:
-    1. Look at the image.
+    1. Analyze the screenshots as a continuous user journey (Scroll depth).
     2. ROAST IT from the perspective of the "${plan.mvcc}".
     3. Analyze the visual hierarchy, color psychology, and trust signals.
     4. Identify 3 specific fixes (Headline, CTA, Visuals, or Copy).
     
     Be harsh but helpful.
     `;
+
+    const imageParts = images.map(img => ({
+        inlineData: {
+            mimeType: 'image/png',
+            data: img
+        }
+    }));
 
     const ROAST_SCHEMA: Schema = {
         type: Type.OBJECT,
@@ -370,7 +378,7 @@ export const roastLandingPage = async (base64Image: string, plan: GTMPlan): Prom
             model: 'gemini-2.5-flash',
             contents: {
                 parts: [
-                    { inlineData: { mimeType: 'image/png', data: base64Image } },
+                    ...imageParts,
                     { text: prompt }
                 ]
             },
