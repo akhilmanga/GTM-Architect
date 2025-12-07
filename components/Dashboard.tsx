@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { GTMPlan, Domain, FormData, WarRoomResult } from '../types';
-import { Download, RefreshCw, ArrowLeft, Target, Users, Zap, MessageSquare, PlayCircle, Swords, AlertTriangle, ShieldCheck, PenTool, Flame, Radio, ExternalLink, Loader } from 'lucide-react';
+import { Download, RefreshCw, ArrowLeft, Target, Users, Zap, MessageSquare, PlayCircle, Swords, AlertTriangle, ShieldCheck, PenTool, Flame, Radio, ExternalLink, Loader, Sparkles } from 'lucide-react';
 import { downloadMarkdown } from '../utils/exportUtils';
 import { regenerateQuarter, getCompetitorIntel } from '../services/geminiService';
 import PersonaSimulator from './PersonaSimulator';
 import ContentDrafter from './ContentDrafter';
 import LandingPageRoaster from './LandingPageRoaster';
+import GTMCopilot from './GTMCopilot';
 
 interface DashboardProps {
   initialPlan: GTMPlan;
@@ -102,7 +103,7 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
             </div>
             <div className="flex gap-2">
                 <button onClick={() => downloadMarkdown(plan)} className={`p-2 rounded-lg ${buttonHover} text-slate-300 transition-colors flex items-center gap-2 text-sm`}>
-                    <Download className="w-4 h-4" /> <span className="hidden sm:inline">Markdown</span>
+                    <Download className="w-4 h-4" /> <span className="hidden sm:inline">Export for Notion</span>
                 </button>
             </div>
         </div>
@@ -448,6 +449,23 @@ const Dashboard: React.FC<DashboardProps> = ({ initialPlan, domainData, onReset 
                     </div>
                 ))}
             </div>
+        </section>
+
+        {/* GTM Copilot Section (End of Output) */}
+        <section className="print:hidden space-y-6 pt-8 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+                <div>
+                     <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                        <span className="text-indigo-400">///</span> Stuck executing?
+                    </h2>
+                    <p className="text-slate-400 mt-1">Ask your GTM Copilot for help with specific tactics or blockers.</p>
+                </div>
+                <div className="p-2 bg-indigo-500/10 rounded-full animate-pulse-slow">
+                    <Sparkles className="w-6 h-6 text-indigo-400" />
+                </div>
+            </div>
+            
+            <GTMCopilot plan={plan} data={domainData} />
         </section>
       </div>
     </div>

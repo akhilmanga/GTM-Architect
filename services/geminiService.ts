@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type, Schema, Chat } from "@google/genai";
 import { Domain, FormData, GTMPlan, QuarterPlan, Web3Inputs, Web2Inputs, ContentDraft, RoastResult, WarRoomResult } from "../types";
 
 const SYSTEM_INSTRUCTION = `
@@ -8,12 +8,14 @@ Your goal is to build a "Founder-Ready, Execution-Grade" GTM playbook.
 CRITICAL INSTRUCTIONS:
 1. DO NOT SUMMARIZE OR GENERALIZE. Be specific, actionable, and battle-tested.
 2. MVCC Framework: Define the Minimum Viable Customer Category hyper-specifically (e.g., "DeFi degens on Arbitrum bridging >$10k" or "Series A DevTools founders").
-3. For each Quarter:
-   - Provide 3 CONCRETE, TIME-BOUND actions (e.g., "Launch Galxe quest targeting...", "Publish 'vs Competitor' technical deep dive").
-   - EXACT CHANNELS with 1 SAMPLE POST idea per channel.
-   - 1-2 TACTICAL PARTNER TARGETS per quarter with a 2-line COLD OUTREACH message.
-   - A clear SUCCESS METRIC with a NUMERIC TARGET.
-   - REQUIRED RESOURCES (Budget, Team, Tools).
+3. Roadmap (4 QUARTERS REQUIRED):
+   - You MUST generate plans for Q1, Q2, Q3, and Q4.
+   - For each Quarter:
+     - Provide 3 CONCRETE, TIME-BOUND actions (e.g., "Launch Galxe quest targeting...", "Publish 'vs Competitor' technical deep dive").
+     - EXACT CHANNELS with 1 SAMPLE POST idea per channel.
+     - 1-2 TACTICAL PARTNER TARGETS per quarter with a 2-line COLD OUTREACH message.
+     - A clear SUCCESS METRIC with a NUMERIC TARGET.
+     - REQUIRED RESOURCES (Budget, Team, Tools).
 4. Competitor Analysis: Identify 2-3 key competitors (or category equivalents) and provide a "How to Kill" battle card:
    - Their Weakness (Product or GTM).
    - Your Wedge (How you steal their users).
@@ -158,6 +160,7 @@ export const generateGTMPlan = async (domain: Domain, data: FormData): Promise<G
 
   const prompt = `
   Generate a DEEP, EXECUTION-GRADE GTM Playbook.
+  Ensure the Roadmap contains exactly 4 Quarters (Q1, Q2, Q3, Q4).
   ${promptContext}
   `;
 
@@ -229,43 +232,48 @@ export const generatePostDrafts = async (action: string, platform: string, proje
     
     const prompt = `
     Draft 3 distinct social media posts for ${platform} based on this action: "${action}".
-    Project Context: ${JSON.stringify(projectContext)}
+    
+    Project Context:
+    Name: ${projectContext.projectName}
+    Description: ${projectContext.description}
     
     Styles:
     1. Viral / Hook-heavy (Short, punchy, clicky)
     2. Professional / Value-add (Thought leadership, educational)
     3. Storytelling / Behind-the-scenes (Authentic, narrative)
+
+    STRICT OUTPUT FORMAT:
+    Return valid JSON only. Do not use Markdown code blocks.
+    Example:
+    {
+      "variations": [
+        { "style": "Viral", "content": "Just launched..." },
+        { "style": "Professional", "content": "We are proud to announce..." }
+      ]
+    }
     `;
 
-    const DRAFT_SCHEMA: Schema = {
-        type: Type.OBJECT,
-        properties: {
-            variations: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        style: { type: Type.STRING },
-                        content: { type: Type.STRING }
-                    },
-                    required: ["style", "content"]
-                }
-            }
-        }
-    };
-
     try {
+        // We use text generation mode (no schema) to avoid strict validation RPC errors on creative tasks
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: DRAFT_SCHEMA,
-            }
         });
 
         if (response.text) {
-            return JSON.parse(response.text).variations as ContentDraft[];
+            // Robust parsing logic
+            let cleanText = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
+            // Locate the first '{' and last '}' to handle any preamble text
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+            }
+
+            const parsed = JSON.parse(cleanText);
+            if (parsed.variations && Array.isArray(parsed.variations)) {
+                 return parsed.variations as ContentDraft[];
+            }
         }
         return [];
     } catch (error) {
@@ -467,4 +475,39 @@ export const getCompetitorIntel = async (competitor: string, projectContext: For
         sources: []
     };
   }
+}
+
+export const startCopilotChat = async (plan: GTMPlan, data: FormData): Promise<Chat> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    const context = `
+    GTM PLAN CONTEXT:
+    ${JSON.stringify(plan, null, 2)}
+    
+    PROJECT DATA:
+    ${JSON.stringify(data, null, 2)}
+    `;
+
+    const systemPrompt = `
+    You are the "GTM Copilot" for this specific project. 
+    Your goal is to unblock the founder and help them execute the GTM plan provided above.
+    
+    GUIDELINES:
+    1. Be concise, encouraging, and tactical.
+    2. Always reference specific parts of the plan (e.g., "As mentioned in Q1...") when relevant.
+    3. If they ask for help with a task (e.g., "Write this email"), do it immediately.
+    4. Do not be generic. Use the Project Data (Name, Description, Competitors) to personalize every answer.
+    
+    CONTEXT:
+    ${context}
+    `;
+
+    const chat = ai.chats.create({
+        model: 'gemini-2.5-flash',
+        config: {
+            systemInstruction: systemPrompt,
+        }
+    });
+
+    return chat;
 }
